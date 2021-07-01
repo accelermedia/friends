@@ -59,6 +59,24 @@ class Friends_REST {
 		);
 		register_rest_route(
 			self::PREFIX,
+			'indieauth',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'rest_indieauth' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::PREFIX,
+			'indieauth',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'rest_indieauth_code' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::PREFIX,
 			'accept-friend-request',
 			array(
 				'methods'             => 'POST',
@@ -157,6 +175,50 @@ class Friends_REST {
 	}
 
 	/**
+	 * An incoming indieauth request.
+	 *
+	 * @param  WP_REST_Request $request The incoming request.
+	 * @return array The array to be returned via the REST API.
+	 */
+	public function rest_indieauth( WP_REST_Request $request ) {
+		return array();
+	}
+
+	/**
+	 * Receive validation that a friend request was really requested by the remote party and give them the code.
+	 *
+	 * @param  WP_REST_Request $request The incoming request.
+	 * @return array The array to be returned via the REST API.
+	 */
+	public function rest_indieauth_code( WP_REST_Request $request ) {
+		$state = $request->get_param( 'state' );
+		if ( $state ) {
+			$state = get_transient( 'friend_request_' . $state );
+			if ( ! isset( $state['me'] ) ) {
+				$state = false;
+			}
+		}
+
+		if ( ! $state ) {
+			return new WP_Error( 'state-missing', __( 'No valid state was provided.', 'friends' ) );
+		}
+
+		$code = $request->get_param( 'code' );
+		if ( ! $code ) {
+			return new WP_Error( 'code-missing', __( 'No code was provided.', 'friends' ) );
+		}
+
+		$friend_username = Friend_User::get_user_login_for_url( $state['me'] );
+		$friend_user = Friend_user::create( $friend_username, 'friend_request', $state['me'] );
+		$token = Friend_User_Token::generate( $friend_user, time() + 86400, $request->get_param( 'code_challenge_method' ) . '$' . $request->get_param( 'code_challenge' ) );
+		$friend_user->set_indieauth_code( $code, $state['redirect_uri'], $state['code_verifier'] );
+
+		return array(
+			'code' => $token->get_token(),
+		);
+	}
+
+	/**
 	 * Receive a friend request via REST
 	 *
 	 * @param  WP_REST_Request $request The incoming request.
@@ -165,6 +227,82 @@ class Friends_REST {
 	public function rest_friend_request( WP_REST_Request $request ) {
 		$version = $request->get_param( 'version' );
 		if ( 2 !== intval( $version ) ) {
+			$me = $request->get_param( 'me' );
+			if ( filter_var( $me, FILTER_VALIDATE_URL ) ) {
+				// IndieAuth request.
+
+				$data = Friends_Mf2\fetch( $me );
+				if ( empty( $data['rels']['authorization_endpoint'] ) ) {
+					return new WP_Error( 'no-indieauth', __( "Couldn't find the IndieAuth authorization_endpoint.", 'friends' ) );
+				}
+
+				if ( empty( $data['rels']['token_endpoint'] ) ) {
+					return new WP_Error( 'no-indieauth', __( "Couldn't find the IndieAuth token_endpoint.", 'friends' ) );
+				}
+
+				$auth_url = false;
+				$token_url = false;
+				if ( isset( $data['rels']['friends-base-url'] ) ) {
+					$friends_base_url = reset( $data['rels']['friends-base-url'] );
+					foreach ( $data['rels']['authorization_endpoint'] as $url ) {
+						if ( 0 === strpos( $url, $friends_base_url ) ) {
+							// Just in case there are multiple authorization_endpoint URLs, pick the friends one.
+							$auth_url = $url;
+							break;
+						}
+					}
+					foreach ( $data['rels']['token_endpoint'] as $url ) {
+						if ( 0 === strpos( $url, $friends_base_url ) ) {
+							// Just in case there are multiple authorization_endpoint URLs, pick the friends one.
+							$token_url = $url;
+							break;
+						}
+					}
+				}
+
+				if ( ! $auth_url ) {
+					$auth_url = reset( $data['rels']['authorization_endpoint'] );
+				}
+
+				if ( ! $token_url ) {
+					$token_url = reset( $data['rels']['token_endpoint'] );
+				}
+
+				$state = wp_generate_password( 56, false );
+				$code_verifier = wp_generate_password( 90, false );
+				$redirect_uri = get_rest_url() . Friends_REST::PREFIX . '/indieauth';
+
+				set_transient(
+					'friend_request_' . $state,
+					array(
+						'me'            => $me,
+						'code_verifier' => $code_verifier,
+						'redirect_uri'  => $redirect_uri,
+						'token_url'     => $token_url,
+					),
+					1200
+				);
+
+				$auth_url = add_query_arg(
+					array(
+						'response_type'         => 'code',
+						'state'                 => $state,
+						'client_id'             => home_url(),
+						'scope'                 => 'friend_request',
+						'response_type'         => 'code',
+						'code_challenge'        => hash( 'sha256', $code_verifier ),
+						'code_challenge_method' => 'S256',
+						'redirect_uri'          => $redirect_uri,
+					),
+					$auth_url
+				);
+
+				header( 'Location: ' . $auth_url );
+				return array(
+					'redirect' => $auth_url,
+				);
+			}
+
 			return new WP_Error(
 				'friends_unsupported_protocol_version',
 				'Incompatible Friends protocol version.',

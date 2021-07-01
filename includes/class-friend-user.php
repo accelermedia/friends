@@ -405,6 +405,25 @@ class Friend_User extends WP_User {
 		$this->update_user_option( 'friends_retention_number', $number );
 		return $number;
 	}
+
+	/**
+	 * Sets the indieauth code data.
+	 *
+	 * @param      string $code           The code received.
+	 * @param      string $redirect_uri   The redirect uri that was received.
+	 * @param      string $code_verifier  The code verifier that we initially set.
+	 */
+	public function set_indieauth_code( $code, $redirect_uri, $code_verifier ) {
+		$this->update_user_option(
+			'friends_indieauth',
+			array(
+				'code'          => $code,
+				'code_verifier' => $code_verifier,
+				'redirect_uri'  => $redirect_uri,
+			)
+		);
+	}
+
 	/**
 	 * Check whether the retention by days of posts is enabled.
 	 *
@@ -469,7 +488,7 @@ class Friend_User extends WP_User {
 	 */
 	public function update_user_icon_url( $user_icon_url ) {
 		if ( ! $user_icon_url ) {
-			$user_icon_url = Friends_Mf2\resolveUrl( $this->user_url, '/favicon.ico' );
+			$user_icon_url = WP_Http::make_absolute_url( '/favicon.ico', $this->user_url );
 		}
 
 		if ( $user_icon_url && Friends::check_url( $user_icon_url ) ) {

@@ -1,14 +1,14 @@
 <?php
 /**
- * Friends Feed URL
+ * Friends User Feed
  *
- * This contains the functions for managing feed URLs.
+ * This contains the functions for managing user feeds.
  *
  * @package Friends
  */
 
 /**
- * This is the class for the feed URLs part of the Friends Plugin.
+ * This is the class for the user feed part of the Friends Plugin.
  *
  * @since 1.0
  *
@@ -125,7 +125,7 @@ class Friend_User_Feed {
 	 * @return bool Feed is active if true.
 	 */
 	public function get_active() {
-		return self::validate_active( get_metadata( 'term', $this->term->term_id, 'active', true ) );
+		return self::sanitize_active( get_metadata( 'term', $this->term->term_id, 'active', true ) );
 	}
 
 	/**
@@ -134,7 +134,7 @@ class Friend_User_Feed {
 	 * @return string The post format.
 	 */
 	public function get_post_format() {
-		return self::validate_post_format( get_metadata( 'term', $this->term->term_id, 'post-format', true ) );
+		return self::sanitize_post_format( get_metadata( 'term', $this->term->term_id, 'post-format', true ) );
 	}
 
 	/**
@@ -143,7 +143,7 @@ class Friend_User_Feed {
 	 * @return string The parser slug.
 	 */
 	public function get_parser() {
-		return self::validate_parser( get_metadata( 'term', $this->term->term_id, 'parser', true ) );
+		return self::sanitize_parser( get_metadata( 'term', $this->term->term_id, 'parser', true ) );
 	}
 
 	/**
@@ -152,7 +152,7 @@ class Friend_User_Feed {
 	 * @return string The mime-type.
 	 */
 	public function get_mime_type() {
-		return self::validate_mime_type( get_metadata( 'term', $this->term->term_id, 'mime-type', true ) );
+		return self::sanitize_mime_type( get_metadata( 'term', $this->term->term_id, 'mime-type', true ) );
 	}
 
 	/**
@@ -161,7 +161,7 @@ class Friend_User_Feed {
 	 * @return string The feed title.
 	 */
 	public function get_title() {
-		return self::validate_title( get_metadata( 'term', $this->term->term_id, 'title', true ) );
+		return self::sanitize_title( get_metadata( 'term', $this->term->term_id, 'title', true ) );
 	}
 
 	/**
@@ -170,7 +170,7 @@ class Friend_User_Feed {
 	 * @return string The log line.
 	 */
 	public function get_last_log() {
-		return self::validate_last_log( get_metadata( 'term', $this->term->term_id, 'last-log', true ) );
+		return self::sanitize_last_log( get_metadata( 'term', $this->term->term_id, 'last-log', true ) );
 	}
 
 	/**
@@ -179,7 +179,7 @@ class Friend_User_Feed {
 	 * @return boolean Is the feed to be fetched?
 	 */
 	public function is_active() {
-		return self::validate_active( get_metadata( 'term', $this->term->term_id, 'active', true ) );
+		return self::sanitize_active( get_metadata( 'term', $this->term->term_id, 'active', true ) );
 	}
 
 	/**
@@ -188,7 +188,7 @@ class Friend_User_Feed {
 	 * @param  string $post_format The post format to be validated.
 	 * @return string              A validated post format.
 	 */
-	public static function validate_post_format( $post_format ) {
+	public static function sanitize_post_format( $post_format ) {
 		$post_formats = get_post_format_strings();
 		$post_formats['autodetect'] = true;
 		if ( isset( $post_formats[ $post_format ] ) ) {
@@ -204,7 +204,7 @@ class Friend_User_Feed {
 	 * @param  string $parser The parser to be validated.
 	 * @return string         A validated parser.
 	 */
-	public static function validate_parser( $parser ) {
+	public static function sanitize_parser( $parser ) {
 		$friends = Friends::get_instance();
 		$parsers = $friends->feed->get_registered_parsers();
 		if ( isset( $parsers[ $parser ] ) ) {
@@ -220,7 +220,7 @@ class Friend_User_Feed {
 	 * @param  string $mime_type The mime-type to be validated.
 	 * @return string            A validated mime-type.
 	 */
-	public static function validate_mime_type( $mime_type ) {
+	public static function sanitize_mime_type( $mime_type ) {
 		return substr( preg_replace( '/[^a-z0-9\/_+-]/', '', $mime_type ), 0, 100 );
 	}
 
@@ -230,7 +230,7 @@ class Friend_User_Feed {
 	 * @param  string $title The title to be validated.
 	 * @return string        A validated title.
 	 */
-	public static function validate_title( $title ) {
+	public static function sanitize_title( $title ) {
 		return substr( $title, 0, 100 );
 	}
 
@@ -240,7 +240,7 @@ class Friend_User_Feed {
 	 * @param  string $last_log The log line to be validated.
 	 * @return string           A validated log line.
 	 */
-	public static function validate_last_log( $last_log ) {
+	public static function sanitize_last_log( $last_log ) {
 		return substr( $last_log, 0, 1000 );
 	}
 
@@ -248,9 +248,9 @@ class Friend_User_Feed {
 	 * Validates the active attribute.
 	 *
 	 * @param  string $active The active value to be validated.
-	 * @return string         A validated active value.
+	 * @return bool         A validated active value.
 	 */
-	public static function validate_active( $active ) {
+	public static function sanitize_active( $active ) {
 		return (bool) $active;
 	}
 
@@ -270,7 +270,6 @@ class Friend_User_Feed {
 			'query_var'         => true,
 		);
 		register_taxonomy( self::TAXONOMY, 'user', $args );
-		register_taxonomy_for_object_type( self::TAXONOMY, 'user' );
 
 		register_term_meta(
 			self::TAXONOMY,
@@ -278,7 +277,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'string',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_post_format' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_post_format' ),
 			)
 		);
 
@@ -288,7 +287,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'string',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_mime_type' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_mime_type' ),
 			)
 		);
 
@@ -298,7 +297,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'string',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_title' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_title' ),
 			)
 		);
 
@@ -308,7 +307,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'string',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_last_log' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_last_log' ),
 			)
 		);
 
@@ -318,7 +317,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'boolean',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_active' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_active' ),
 			)
 		);
 
@@ -328,7 +327,7 @@ class Friend_User_Feed {
 			array(
 				'type'              => 'string',
 				'single'            => true,
-				'sanitize_callback' => array( __CLASS__, 'validate_parser' ),
+				'sanitize_callback' => array( __CLASS__, 'sanitize_parser' ),
 			)
 		);
 	}
@@ -378,7 +377,7 @@ class Friend_User_Feed {
 			return null;
 		}
 
-		// $friend_user->delete_user_option( 'friends_feed_url' );
+		$friend_user->delete_user_option( 'friends_feed_url' );
 
 		return array( new self( $term, $friend_user ) );
 	}

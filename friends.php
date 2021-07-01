@@ -27,6 +27,7 @@ require_once __DIR__ . '/libs/Mf2/Parser.php';
 require_once __DIR__ . '/includes/class-friend-user.php';
 require_once __DIR__ . '/includes/class-friend-user-feed.php';
 require_once __DIR__ . '/includes/class-friend-user-query.php';
+require_once __DIR__ . '/includes/class-friend-user-token.php';
 
 // Classes to be implemented or used by parser plugins.
 require_once __DIR__ . '/feed-parsers/class-friends-feed-parser.php';

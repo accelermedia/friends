@@ -22,6 +22,8 @@ class Friends_RestTest extends WP_UnitTestCase {
 	public function setUp() {
 		parent::setUp();
 
+		require_once __DIR__ . '/class-fake-http-requests-response.php';
+
 		// Manually activate the REST server.
 		global $wp_rest_server;
 		$wp_rest_server = new \Spy_REST_Server;
@@ -33,6 +35,22 @@ class Friends_RestTest extends WP_UnitTestCase {
 			function() {
 				return get_option( 'home' ) . '/wp-json/';
 			}
+		);
+
+		add_filter(
+			'fake_http_response',
+			function( $response, $home_url, $url, $request ) {
+				if ( ! is_wp_error( $response ) ) {
+					$response['http_response'] = new Fake_HTTP_Requests_Response(
+						array(
+							'url' => $url,
+						)
+					);
+				}
+				return $response;
+			},
+			20,
+			4
 		);
 
 		// Emulate HTTP requests to the REST API.
@@ -65,7 +83,7 @@ class Friends_RestTest extends WP_UnitTestCase {
 						$request
 					);
 				} elseif ( false === strpos( $url, $rest_prefix ) ) {
-					$html = Friends::get_html_link_rel_friends_base_url();
+					$html = '<html><head><title>' . esc_html( ucwords( strtr( wp_parse_url( $home_url, PHP_URL_HOST ), '.', ' ' ) ) ) . '</title>' . implode( PHP_EOL, Friends::get_html_rel_links() ) . '</head></html>';
 
 					// Restore the old home_url.
 					update_option( 'home', $home_url );
@@ -137,6 +155,86 @@ class Friends_RestTest extends WP_UnitTestCase {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Test a indieauth friend request on the REST level.
+	 */
+	public function test_indieauth_friend_request() {
+		$my_url     = 'http://me.local';
+		$friend_url = 'http://friend.local';
+
+		// Let's send a friend request to $friend_url.
+		update_option( 'home', $friend_url );
+
+		$request = new WP_REST_Request( 'POST', '/' . Friends_REST::PREFIX . '/friend-request' );
+		$request->set_param( 'me', $my_url );
+		$friend_request_response = $this->server->dispatch( $request );
+		$this->assertArrayHasKey( 'redirect', $friend_request_response->data );
+
+		$auth_url = parse_url( $friend_request_response->data['redirect'] );
+		$this->assertEquals( $my_url, $auth_url['scheme'] . '://' . $auth_url['host'] );
+		$this->assertEquals( '/wp-json/' . Friends_REST::PREFIX . '/indieauth', $auth_url['path'] );
+
+		parse_str( $auth_url['query'], $response );
+
+		$scope = explode( ' ', $response['scope'] );
+		$this->assertContains( 'friend_request', $scope );
+
+		$this->assertEquals( rtrim( $friend_url, '/' ), rtrim( $response['client_id'], '/' ) );
+		$this->assertEquals( rtrim( $friend_url, '/' ), rtrim( $response['client_id'], '/' ) );
+
+		$friend_username = Friend_User::get_user_login_for_url( $response['client_id'] );
+		$friend_user = Friend_user::create( $friend_username, 'pending_friend_request', $response['client_id'] );
+		$token = Friend_User_Token::generate( $friend_user, time() + 86400, $response['code_challenge_method'] . '$' . $response['code_challenge'] );
+
+		$code_verifier = wp_generate_password( 90, false );
+
+		$code_path = str_replace( $friend_url . '/wp-json', '', $response['redirect_uri'] );
+		$request = new WP_REST_Request( 'GET', $code_path );
+
+		$request->set_param( 'state', $response['state'] );
+		$request->set_param( 'code', $token->get_token() );
+		$request->set_param( 'code_challenge', hash( 'sha256', $code_verifier ) );
+		$request->set_param( 'code_challenge_method', 'S256' );
+
+		$code_response = $this->server->dispatch( $request );
+		$this->assertArrayHasKey( 'code', $code_response->data );
+		$friend_user->set_indieauth_code( $code_response->data['code'], $response['redirect_uri'], $code_verifier );
+
+		// Verify that the user case created at remote.
+		$my_username_at_friend = Friend_User::get_user_login_for_url( $my_url );
+		$my_user_at_friend = Friend_User::get_user( $my_username_at_friend );
+
+		$this->assertInstanceOf( 'Friend_User', $my_user_at_friend );
+		$this->assertTrue( $my_user_at_friend->has_cap( 'friend_request' ) );
+		$this->assertFalse( $my_user_at_friend->has_cap( 'friend' ) );
+
+		$this->assertInstanceOf( 'Friend_User', $friend_user );
+		$this->assertTrue( $friend_user->has_cap( 'pending_friend_request' ) );
+		$this->assertFalse( $friend_user->has_cap( 'friend' ) );
+
+		return;
+		// TODO Now let's accept the friend request.
+		update_option( 'home', $my_url );
+		$request = new WP_REST_Request( 'POST', '/' . Friends_REST::PREFIX . '/accept-friend-request' );
+		$request->set_param( 'request', $friend_request_response->data['request'] );
+		$request->set_param( 'key', $future_out_token );
+		$request->set_param( 'proof', sha1( $future_in_token . $friend_request_response->data['request'] ) );
+
+		$friend_accept_response = $this->server->dispatch( $request );
+		$this->assertArrayHasKey( 'signature', $friend_accept_response->data );
+		delete_user_option( $my_user_at_friend->ID, 'friends_request_token' );
+
+		$my_user_at_friend->make_friend( $future_in_token, $future_out_token );
+
+		// Check the token.
+		$this->assertEquals( $friend_user->get_user_option( 'friends_in_token' ), $future_in_token );
+		$this->assertEquals( $friend_user->get_user_option( 'friends_out_token' ), $future_out_token );
+		$this->assertTrue( boolval( $my_user_at_friend->get_user_option( 'friends_in_token' ) ) );
+		$this->assertTrue( boolval( $my_user_at_friend->get_user_option( 'friends_out_token' ) ) );
+		$this->assertEquals( $friend_user->get_user_option( 'friends_out_token' ), $my_user_at_friend->get_user_option( 'friends_in_token' ) );
+		$this->assertEquals( $friend_user->get_user_option( 'friends_in_token' ), $my_user_at_friend->get_user_option( 'friends_out_token' ) );
 	}
 
 	/**

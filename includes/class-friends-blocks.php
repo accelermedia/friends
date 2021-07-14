@@ -76,6 +76,10 @@ class Friends_Blocks {
 				'render_callback' => array( $this, 'render_friend_posts_block' ),
 			)
 		);
+
+		register_block_type_from_metadata(
+			FRIENDS_PLUGIN_DIR . '/blocks/follow-me'
+		);
 	}
 
 	/**

@@ -2,7 +2,8 @@
   "packages": [
     "blocks/block-visibility",
     "blocks/friend-posts",
-    "blocks/friends-list"
+    "blocks/friends-list",
+    "blocks/follow-me"
   ],
   "version": "independent"
 }

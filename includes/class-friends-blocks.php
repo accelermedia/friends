@@ -50,6 +50,7 @@ class Friends_Blocks {
 			add_filter( 'get_the_excerpt', array( $this, 'current_excerpt_start' ), 9, 2 );
 			add_filter( 'get_the_excerpt', array( $this, 'current_excerpt_end' ), 11, 2 );
 			add_filter( 'wp_loaded', array( $this, 'add_block_visibility_attribute' ), 10, 2 );
+			add_filter( 'template_redirect', array( $this, 'handle_follow_me' ), 10, 2 );
 			add_action( 'enqueue_block_editor_assets', array( $this, 'register_friends_block_visibility' ) );
 			add_action( 'init', array( $this, 'register_blocks' ) );
 		}
@@ -301,11 +302,10 @@ class Friends_Blocks {
 		);
 	}
 
-
 	/**
 	 * Adds a block visibility attribute.
 	 */
-	function add_block_visibility_attribute() {
+	public function add_block_visibility_attribute() {
 		$registered_blocks = WP_Block_Type_Registry::get_instance()->get_all_registered();
 
 		foreach ( $registered_blocks as $block ) {
@@ -313,6 +313,58 @@ class Friends_Blocks {
 				'type'    => 'string',
 				'default' => '',
 			);
+		}
+	}
+
+	/**
+	 * Handle the follow me button click.
+	 */
+	public function handle_follow_me() {
+		if ( isset( $_REQUEST['friends_friend_request_url'] ) ) {
+			$url = $_REQUEST['friends_friend_request_url'];
+
+			$fqdn_regex = '(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)';
+			if ( false === strpos( $url, 'https://' ) ) {
+				$url = 'https://' . $url;
+			}
+			$parts = parse_url( $url );
+
+			if ( ! preg_match( '/' . $fqdn_regex . '/', $parts['host'] ) ) {
+				echo 'invalid url';
+				exit;
+			}
+
+			$response = wp_safe_remote_head(
+				$url,
+				array(
+					'timeout'     => 5,
+					'redirection' => 5,
+					'headers'     => array(
+						'Accept: text/html',
+					),
+				)
+			);
+			if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+				echo 'non-200 header';
+				exit;
+			}
+			$links = (array) wp_remote_retrieve_header( $response, 'link' );
+			if ( empty( $links ) ) {
+				echo 'no links';
+				exit;
+			}
+
+			$authorization_endpoints = array_filter(
+				$links,
+				function( $link ) {
+					return preg_match( '/rel="?authorization_endpoint"?/', $link );
+				}
+			);
+
+			echo '<pre>';
+			echo esc_html( print_r( $authorization_endpoints, true ) );
+
+			exit;
 		}
 	}
 	/**

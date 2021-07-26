@@ -4,11 +4,11 @@ import { registerBlockType } from '@wordpress/blocks';
 import { useBlockProps } from '@wordpress/block-editor';
 import { InnerBlocks, RichText } from "@wordpress/block-editor";
 
-function getHTML() {
+function getHTML( is_saving ) {
 	return (
 		<div>
-			<input type="url" placeholder="https://example.com/" />
-			<button disabled="disabled">{ __( 'Follow this site', 'friends' ) }</button>
+			<input type="text" name="friends_friend_request_url" placeholder="https://example.com/" />
+			<button disabled={ is_saving ? null : "disabled" }>{ __( 'Follow this site', 'friends' ) }</button>
 		</div>
 	);
 }
@@ -28,7 +28,7 @@ registerBlockType( 'friends/follow-me', {
 						}
 					/>
 
-				{ getHTML() }
+				{ getHTML( false ) }
 				</form>
 			</div>
 			);
@@ -38,8 +38,10 @@ registerBlockType( 'friends/follow-me', {
 
         return (
             <div { ...blockProps }>
-                <InnerBlocks.Content />
-                { getHTML() }
+				<form method="post">
+	                <InnerBlocks.Content />
+	                { getHTML( true ) }
+				</form>
            </div>
         );
     },

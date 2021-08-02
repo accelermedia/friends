@@ -61,17 +61,8 @@ class Friends_REST {
 			self::PREFIX,
 			'indieauth',
 			array(
-				'methods'             => 'POST',
-				'callback'            => array( $this, 'rest_indieauth' ),
-				'permission_callback' => '__return_true',
-			)
-		);
-		register_rest_route(
-			self::PREFIX,
-			'indieauth',
-			array(
 				'methods'             => 'GET',
-				'callback'            => array( $this, 'rest_indieauth_code' ),
+				'callback'            => array( $this, 'rest_indieauth' ),
 				'permission_callback' => '__return_true',
 			)
 		);
@@ -175,32 +166,74 @@ class Friends_REST {
 	}
 
 	/**
-	 * An incoming indieauth request.
+	 * Handle an incoming account creation request via IndieAuth.
 	 *
 	 * @param  WP_REST_Request $request The incoming request.
 	 * @return array The array to be returned via the REST API.
 	 */
-	public function rest_indieauth( WP_REST_Request $request ) {
-		return array();
-	}
+	protected function handle_create_account_request( WP_REST_Request $request ) {
+		if ( $request->get_param( 'account_role' ) !== 'friend' ) {
+			return new WP_Error( 'not-a-friend-request', __( 'We can only handle friend requests.', 'friends' ) );
+		}
 
+		$client_id = $request->get_param( 'client_id' );
+		if ( ! $client_id ) {
+			return new WP_Error( 'unknown-user', __( "Sorry, we don't have you on record.", 'friends' ) );
+		}
+
+		$friend_user_login = Friend_User::get_user_login_for_url( $client_id );
+		$friend_user = Friend_User::get_user( $friend_user_login );
+		if ( ! $friend_user || is_wp_error( $friend_user ) ) {
+			return new WP_Error( 'unknown-user', __( "Sorry, we don't have you on record.", 'friends' ) );
+		}
+		if ( ! $friend_user->is_valid_friend() && ! $friend_user->has_cap( 'pending_friend_request' ) ) {
+			return new WP_Error( 'invalid-state', __( "Sorry, we haven't been waiting for your request.", 'friends' ) );
+		}
+
+		$token = Friend_User_Token::generate( $friend_user, time() + 86400, $request->get_param( 'code_challenge_method' ) . '$' . $request->get_param( 'code_challenge' ) );
+
+		return array(
+			'state'                 => $request->get_param( 'state' ),
+			'code'                  => $token->get_token(),
+			'code_challenge'        => hash( 'sha256', $friend_user->generate_indieauth_code_verifier() ),
+			'code_challenge_method' => 'S256',
+		);
+	}
 	/**
 	 * Receive validation that a friend request was really requested by the remote party and give them the code.
 	 *
 	 * @param  WP_REST_Request $request The incoming request.
 	 * @return array The array to be returned via the REST API.
 	 */
-	public function rest_indieauth_code( WP_REST_Request $request ) {
+	public function rest_indieauth( WP_REST_Request $request ) {
 		$state = $request->get_param( 'state' );
 		if ( $state ) {
-			$state = get_transient( 'friend_request_' . $state );
+			$state = get_transient( 'friend_request_' . substr( sha1( home_url() ), 0, 10 ) . '_' . $state );
 			if ( ! isset( $state['me'] ) ) {
 				$state = false;
 			}
 		}
 
 		if ( ! $state ) {
-			return new WP_Error( 'state-missing', __( 'No valid state was provided.', 'friends' ) );
+			$scopes = explode( ' ', $request->get_param( 'scope' ) );
+			if ( in_array( 'create_account', $scopes ) ) {
+				return $this->handle_create_account_request( $request );
+			}
+
+			// Fallback to the IndieAuth WordPress plugin.
+			$args = array_filter(
+				array(
+					'action'        => 'indieauth',
+					'client_id'     => $request->get_param( 'client_id' ),
+					'redirect_uri'  => $request->get_param( 'redirect_uri' ),
+					'state'         => $request->get_param( 'state' ),
+					'me'            => $request->get_param( 'me' ),
+					'response_type' => $request->get_param( 'response_type' ),
+				)
+			);
+
+			$login_form_url = add_query_arg( $args, wp_login_url() );
+			return new WP_REST_Response( array( 'redirect' => $login_form_url ), 302, array( 'Location' => $login_form_url ) );
 		}
 
 		$code = $request->get_param( 'code' );
@@ -209,7 +242,7 @@ class Friends_REST {
 		}
 
 		$friend_username = Friend_User::get_user_login_for_url( $state['me'] );
-		$friend_user = Friend_user::create( $friend_username, 'friend_request', $state['me'] );
+		$friend_user = Friend_User::create( $friend_username, 'friend_request', $state['me'] );
 		$token = Friend_User_Token::generate( $friend_user, time() + 86400, $request->get_param( 'code_challenge_method' ) . '$' . $request->get_param( 'code_challenge' ) );
 		$friend_user->set_indieauth_code( $code, $state['redirect_uri'], $state['code_verifier'] );
 
@@ -273,7 +306,7 @@ class Friends_REST {
 				$redirect_uri = get_rest_url() . Friends_REST::PREFIX . '/indieauth';
 
 				set_transient(
-					'friend_request_' . $state,
+					'friend_request_' . substr( sha1( home_url() ), 0, 10 ) . '_' . $state,
 					array(
 						'me'            => $me,
 						'code_verifier' => $code_verifier,
@@ -288,7 +321,8 @@ class Friends_REST {
 						'response_type'         => 'code',
 						'state'                 => $state,
 						'client_id'             => home_url(),
-						'scope'                 => 'friend_request',
+						'scope'                 => 'create_account',
+						'account_role'          => 'friend',
 						'response_type'         => 'code',
 						'code_challenge'        => hash( 'sha256', $code_verifier ),
 						'code_challenge_method' => 'S256',
@@ -297,10 +331,7 @@ class Friends_REST {
 					$auth_url
 				);
 
-				header( 'Location: ' . $auth_url );
-				return array(
-					'redirect' => $auth_url,
-				);
+				return new WP_REST_Response( array( 'redirect' => $auth_url ), 302, array( 'Location' => $auth_url ) );
 			}
 
 			return new WP_Error(
@@ -404,7 +435,7 @@ class Friends_REST {
 	public function rest_friend_post_deleted( $request ) {
 		$token   = $request->get_param( 'friend' );
 		$auth    = $request->get_param( 'auth' );
-		$user_id = $this->friends->access_control->verify_token( $token, $auth );
+		$user_id = $this->friends->access_control->verify_token( $token, null, $auth );
 		if ( ! $user_id ) {
 			return new WP_Error(
 				'friends_request_failed',
@@ -416,7 +447,7 @@ class Friends_REST {
 		}
 		$friend_user     = new Friend_User( $user_id );
 		$remote_post_id  = $request->get_param( 'post_id' );
-		$remote_post_ids = $this->friends->feed->get_remote_post_ids( $friend_user );
+		$remote_post_ids = $friend_user->get_remote_post_ids();
 
 		if ( ! isset( $remote_post_ids[ $remote_post_id ] ) ) {
 			return array(
@@ -438,10 +469,10 @@ class Friends_REST {
 	/**
 	 * Discover the REST URL for a friend site
 	 *
-	 * @param  string $feeds The URL of the site.
+	 * @param  array $feeds The URLs of the site.
 	 * @return string|WP_Error The REST URL or an error.
 	 */
-	public function get_rest_url( $feeds ) {
+	public function get_rest_url( array $feeds ) {
 		foreach ( $feeds as $feed_url => $feed ) {
 			if ( isset( $feed['parser'] ) && 'friends' === $feed['parser'] ) {
 				return $feed_url;

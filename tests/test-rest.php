@@ -164,12 +164,17 @@ class Friends_RestTest extends WP_UnitTestCase {
 		$my_url     = 'http://me.local';
 		$friend_url = 'http://friend.local';
 
-		// Let's send a friend request to $friend_url.
+		// First, we'll create the friend user in preparation for getting a IndieAuth callback.
+		$friend_username = Friend_User::get_user_login_for_url( $friend_url );
+		$friend_user = Friend_User::create( $friend_username, 'pending_friend_request', $friend_url );
+
+		// Let's send a friend request to $friend_url. Changing env to friend and call the REST handler.
 		update_option( 'home', $friend_url );
 
 		$request = new WP_REST_Request( 'POST', '/' . Friends_REST::PREFIX . '/friend-request' );
 		$request->set_param( 'me', $my_url );
 		$friend_request_response = $this->server->dispatch( $request );
+		$this->assertEquals( 302, $friend_request_response->status, 'Received: ' . print_r( $friend_request_response->data, true ) );
 		$this->assertArrayHasKey( 'redirect', $friend_request_response->data );
 
 		$auth_url = parse_url( $friend_request_response->data['redirect'] );
@@ -179,28 +184,33 @@ class Friends_RestTest extends WP_UnitTestCase {
 		parse_str( $auth_url['query'], $response );
 
 		$scope = explode( ' ', $response['scope'] );
-		$this->assertContains( 'friend_request', $scope );
-
+		$this->assertContains( 'create_account', $scope );
+		$this->assertEquals( 'friend', $response['account_role'] );
 		$this->assertEquals( rtrim( $friend_url, '/' ), rtrim( $response['client_id'], '/' ) );
-		$this->assertEquals( rtrim( $friend_url, '/' ), rtrim( $response['client_id'], '/' ) );
 
-		$friend_username = Friend_User::get_user_login_for_url( $response['client_id'] );
-		$friend_user = Friend_user::create( $friend_username, 'pending_friend_request', $response['client_id'] );
-		$token = Friend_User_Token::generate( $friend_user, time() + 86400, $response['code_challenge_method'] . '$' . $response['code_challenge'] );
+		// Process the response as if I had received it. This should be the IndieAuth callback.
+		update_option( 'home', $my_url );
+		$redirect_path = preg_replace( '#^/wp-json/#', '/', $auth_url['path'] );
+		$request = new WP_REST_Request( 'GET', $redirect_path );
+		foreach ( $response as $key => $value ) {
+			$request->set_param( $key, $value );
+		}
+		$indieauth_response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $indieauth_response->status, 'Received: ' . print_r( $indieauth_response->data, true ) );
 
-		$code_verifier = wp_generate_password( 90, false );
-
+		// The above should have given us a code. Let's GET this at the friend.
+		update_option( 'home', $friend_url );
 		$code_path = str_replace( $friend_url . '/wp-json', '', $response['redirect_uri'] );
-		$request = new WP_REST_Request( 'GET', $code_path );
 
-		$request->set_param( 'state', $response['state'] );
-		$request->set_param( 'code', $token->get_token() );
-		$request->set_param( 'code_challenge', hash( 'sha256', $code_verifier ) );
-		$request->set_param( 'code_challenge_method', 'S256' );
+		$request = new WP_REST_Request( 'GET', $code_path );
+		foreach ( $indieauth_response->data as $key => $value ) {
+			$request->set_param( $key, $value );
+		}
 
 		$code_response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $code_response->status, 'Received: ' . print_r( $code_response->data, true ) );
 		$this->assertArrayHasKey( 'code', $code_response->data );
-		$friend_user->set_indieauth_code( $code_response->data['code'], $response['redirect_uri'], $code_verifier );
+		$friend_user->set_indieauth_code( $code_response->data['code'], $response['redirect_uri'] );
 
 		// Verify that the user case created at remote.
 		$my_username_at_friend = Friend_User::get_user_login_for_url( $my_url );

@@ -58,6 +58,7 @@ class Friends_Admin {
 		add_action( 'delete_user', array( $this, 'delete_user' ) );
 		add_action( 'tool_box', array( $this, 'toolbox_bookmarklets' ) );
 		add_action( 'dashboard_glance_items', array( $this, 'dashboard_glance_items' ) );
+		add_action( 'login_form_indieauth', array( $this, 'login_form_indieauth_fallback' ), 100 );
 
 		if ( ! get_option( 'permalink_structure' ) ) {
 			add_action( 'admin_notices', array( $this, 'admin_notice_unsupported_permalink_structure' ) );
@@ -2024,5 +2025,28 @@ class Friends_Admin {
 			$items[] = '<a class="friend-posts" href="' . home_url( '/friends/' ) . '">' . sprintf( _n( '%s Post by Friends', '%s Posts by Friends', $friend_post_count, 'friends' ), $friend_post_count ) . '</a>';
 		}
 		return $items;
+	}
+
+	/**
+	 * This will only be run if the IndieAuth plugin is not installed.
+	 */
+	public function login_form_indieauth_fallback() {
+		add_filter( 'login_message', array( $this, 'login_form_indieauth_message' ) );
+	}
+
+	/**
+	 * Tell the user that IndieAuth is not available (without the plugin).
+	 *
+	 * @param      string $message  The message in the login form.
+	 *
+	 * @return     string  The message in the login form.
+	 */
+	public function login_form_indieauth_message( $message ) {
+		if ( ! $message ) {
+			$message = __( 'Unfortunately IndieAuth login is not available.', 'friends' );
+		}
+
+		return $message;
+
 	}
 }

@@ -170,40 +170,6 @@ class Friend_User_Token {
 	}
 
 	/**
-	 * Convert the previous storage of a feed URL as a user option to use terms.
-	 *
-	 * @param  Friend_User $friend_user The user to be converted.
-	 * @return array                    An array of newly created Friend_User_Feed items.
-	 */
-	public static function convert_user( Friend_User $friend_user ) {
-		return;
-		$feed_url = $friend_user->get_user_option( 'friends_feed_url' );
-		if ( ! $feed_url ) {
-			$feed_url = rtrim( $friend_user->user_url, '/' ) . '/feed/';
-		}
-
-		$term = self::save(
-			$friend_user,
-			$feed_url,
-			array(
-				'active'      => true,
-				'parser'      => 'simplepie',
-				'post-format' => 'standard',
-				'mime-type'   => 'application/rss+xml',
-				'title'       => $friend_user->display_name . ' RSS Feed',
-			)
-		);
-
-		if ( is_wp_error( $term ) ) {
-			return null;
-		}
-
-		// $friend_user->delete_user_option( 'friends_feed_url' );
-
-		return array( new self( $term, $friend_user ) );
-	}
-
-	/**
 	 * Generate a new token for the user.
 	 *
 	 * @param      Friend_User $friend_user  The user to be associated.

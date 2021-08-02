@@ -167,6 +167,10 @@ class Friend_User extends WP_User {
 	 * @return Friend_User|false The friend user or false.
 	 */
 	public static function get_user( $user_login ) {
+		if ( ! trim( $user_login ) ) {
+			return false;
+		}
+
 		$user = get_user_by( 'login', $user_login );
 		if ( $user ) {
 			if ( self::is_friends_plugin_user( $user ) ) {
@@ -407,19 +411,25 @@ class Friend_User extends WP_User {
 	}
 
 	/**
+	 * Generate and store the indieauth code verifier.
+	 */
+	public function generate_indieauth_code_verifier() {
+		$code_verifier = wp_generate_password( 90, false );
+		$this->update_user_option( 'friends_indieauth_code_verifier', $code_verifier );
+		return $code_verifier;
+	}
+	/**
 	 * Sets the indieauth code data.
 	 *
 	 * @param      string $code           The code received.
 	 * @param      string $redirect_uri   The redirect uri that was received.
-	 * @param      string $code_verifier  The code verifier that we initially set.
 	 */
-	public function set_indieauth_code( $code, $redirect_uri, $code_verifier ) {
-		$this->update_user_option(
+	public function set_indieauth_code( $code, $redirect_uri ) {
+		return $this->update_user_option(
 			'friends_indieauth',
 			array(
-				'code'          => $code,
-				'code_verifier' => $code_verifier,
-				'redirect_uri'  => $redirect_uri,
+				'code'         => $code,
+				'redirect_uri' => $redirect_uri,
 			)
 		);
 	}

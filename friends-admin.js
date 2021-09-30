@@ -156,4 +156,9 @@ jQuery( function( $ ) {
 		return false;
 	} );
 
+
+	$( document ).on( 'click', '#friends-bulk-publish', function() {
+		$( this ).closest( 'div' ).find( 'select option[value=publish]' ).prop( 'selected', true );
+	} );
+
 } );

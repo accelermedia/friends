@@ -665,6 +665,17 @@ class Friends_Frontend {
 		if ( $wp_query !== $query || $query->is_admin() || $query->is_home() ) {
 			return $query;
 		}
+
+		$pagename = '';
+		if ( isset( $wp_query->query['pagename'] ) ) {
+			$pagename = $wp_query->query['pagename'];
+		}
+
+		$pagename_parts = explode( '/', trim( $pagename, '/' ) );
+		if ( count( $pagename_parts ) > 0 && 'friends' !== $pagename_parts[0] ) {
+			return $query;
+		}
+
 		// Not available for the general public or friends.
 		$viewable = current_user_can( Friends::REQUIRED_ROLE );
 		if ( $query->is_feed() ) {
@@ -679,8 +690,10 @@ class Friends_Frontend {
 			}
 		}
 
-		if ( ! ( Friends::on_frontend() || $query->is_feed() ) || ! $viewable ) {
-			return $query;
+		if ( ! $viewable ) {
+			if ( ! Friends::on_frontend() && ! $query->is_feed() ) {
+				return $query;
+			}
 		}
 
 		// Super Admins cannot view other's friend pages.
@@ -711,11 +724,6 @@ class Friends_Frontend {
 		$query->is_comment_feed = false;
 		$query->set( 'pagename', null );
 
-		$pagename = '';
-		if ( isset( $wp_query->query['pagename'] ) ) {
-			$pagename = $wp_query->query['pagename'];
-		}
-		$pagename_parts = explode( '/', trim( $pagename, '/' ) );
 		if ( isset( $pagename_parts[1] ) ) {
 			if ( 'opml' === $pagename_parts[1] ) {
 				return $this->render_opml();

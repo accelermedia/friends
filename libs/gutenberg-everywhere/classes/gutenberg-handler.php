@@ -1,8 +1,9 @@
 <?php
+namespace Friends;
 
 require_once __DIR__ . '/iso-gutenberg.php';
 
-abstract class Friends_Gutenberg_Handler {
+abstract class Gutenberg_Handler {
 	private $doing_hook = null;
 
 	/**
@@ -137,7 +138,7 @@ abstract class Friends_Gutenberg_Handler {
 	 * @return void
 	 */
 	public function load_editor( $textarea, $container = null ) {
-		$this->gutenberg = new Friends_GutenbergEverywhere_Editor();
+		$this->gutenberg = new GutenbergEverywhere_Editor();
 		$this->gutenberg->load();
 
 		$asset_file = dirname( __DIR__ ) . '/build/index.asset.php';
@@ -161,10 +162,10 @@ abstract class Friends_Gutenberg_Handler {
 
 		$plugin = dirname( dirname( __FILE__ ) ) . '/gutenberg-everywhere.php';
 
-		wp_register_script( 'gutenberg-everywhere', plugins_url( 'build/index.js', $plugin ), [], $version, true );
+		wp_register_script( 'gutenberg-everywhere', plugins_url( 'build/index.js', $plugin ), $js_dependencies, $version, true );
 		wp_enqueue_script( 'gutenberg-everywhere' );
 
-		wp_register_style( 'gutenberg-everywhere', plugins_url( 'build/style-index.css', $plugin ), [], $version );
+		wp_register_style( 'gutenberg-everywhere', plugins_url( 'build/style-index.css', $plugin ), $css_dependencies, $version );
 		wp_enqueue_style( 'gutenberg-everywhere' );
 
 		// Settings for the editor

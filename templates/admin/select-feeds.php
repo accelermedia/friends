@@ -14,9 +14,16 @@ if ( $args['friends_plugin'] ) {
 }
 
 foreach ( $args['feeds'] as $feed_url => $details ) {
-	if ( 'unsupported' === $details['parser'] ) {
+	if ( ! isset( $details['parser'] ) || 'unsupported' === $details['parser'] ) {
 		$unsupported_feeds[ $feed_url ] = $details;
 		unset( $args['feeds'][ $feed_url ] );
+		continue;
+	}
+	if ( ! isset( $details['url'] ) ) {
+		$args['feeds'][ $feed_url ]['url'] = $feed_url;
+	}
+	if ( ! isset( $details['autoselect'] ) ) {
+		$args['feeds'][ $feed_url ]['autoselect'] = false;
 	}
 }
 
@@ -60,7 +67,7 @@ foreach ( $args['feeds'] as $feed_url => $details ) {
 						<?php
 						foreach ( $args['friend_roles'] as $role => $title ) :
 							?>
-							<option value="<?php echo esc_attr( $role ); ?>"<?php selected( $default_role, $role ); ?>><?php echo esc_html( $title ); ?></option>
+							<option value="<?php echo esc_attr( $role ); ?>"<?php selected( $args['default_role'], $role ); ?>><?php echo esc_html( $title ); ?></option>
 						<?php endforeach; ?>
 					</select></label>
 					<p class="description details hidden"><small>
@@ -88,7 +95,7 @@ foreach ( $args['feeds'] as $feed_url => $details ) {
 			<tr class="friends-advanced hidden">
 				<th scope="row"><label for="codeword"><?php esc_html_e( 'Code word (Optional)', 'friends' ); ?></label></th>
 				<td>
-					<input type="text" autofocus id="codeword" name="codeword" value="<?php echo esc_attr( $args['codeword'] ); ?>" placeholder="<?php esc_attr_e( 'None' ); ?>" class="regular-text" />
+					<input type="text" autofocus id="codeword" name="codeword" value="<?php echo esc_attr( $args['codeword'] ); ?>" placeholder="<?php /* phpcs:ignore WordPress.WP.I18n.MissingArgDomain */ esc_attr_e( 'None' ); ?>" class="regular-text" />
 					<p class="description" id="codeword-description">
 						<?php esc_html_e( 'Your friend might have told you to provide something here.', 'friends' ); ?>
 					</p>

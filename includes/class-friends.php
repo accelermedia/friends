@@ -7,6 +7,8 @@
  * @package Friends
  */
 
+namespace Friends;
+
 /**
  * This is the class for the Friends Plugin.
  *
@@ -14,7 +16,7 @@
  * @author Alex Kirk
  */
 class Friends {
-	const VERSION       = '1.8.3';
+	const VERSION       = '1.9.1';
 	const CPT           = 'friend_post_cache';
 	const FEED_URL      = 'friends-feed-url';
 	const PLUGIN_URL    = 'https://wordpress.org/plugins/friends/';
@@ -28,58 +30,58 @@ class Friends {
 	}
 
 	/**
-	 * A reference to the Friends_Admin object.
+	 * A reference to the Admin object.
 	 *
-	 * @var Friends_Admin
+	 * @var Admin
 	 */
 	public $admin;
 
 	/**
-	 * A reference to the Friends_Access_Control object.
+	 * A reference to the Access_Control object.
 	 *
-	 * @var Friends_Access_Control
+	 * @var Access_Control
 	 */
 	public $access_control;
 
 	/**
-	 * A reference to the Friends_Feed object.
+	 * A reference to the Feed object.
 	 *
-	 * @var Friends_Feed
+	 * @var Feed
 	 */
 	public $feed;
 
 	/**
-	 * A reference to the Friends_Messages object.
+	 * A reference to the Messages object.
 	 *
-	 * @var Friends_Messages
+	 * @var Messages
 	 */
 	public $messages;
 
 	/**
-	 * A reference to the Friends_Notifications object.
+	 * A reference to the Notifications object.
 	 *
-	 * @var Friends_Notifications
+	 * @var Notifications
 	 */
 	public $notifications;
 
 	/**
-	 * A reference to the Friends_Frontend object.
+	 * A reference to the Frontend object.
 	 *
-	 * @var Friends_Frontend
+	 * @var Frontend
 	 */
 	public $frontend;
 
 	/**
-	 * A reference to the Friends_REST object.
+	 * A reference to the REST object.
 	 *
-	 * @var Friends_REST
+	 * @var REST
 	 */
 	public $rest;
 
 	/**
-	 * A reference to the Friends_Reactions object.
+	 * A reference to the Reactions object.
 	 *
-	 * @var Friends_Reactions
+	 * @var Reactions
 	 */
 	public $reactions;
 
@@ -98,14 +100,14 @@ class Friends {
 	}
 
 	/**
-	 * Get the Friends_Template_Loader singleton
+	 * Get the Template_Loader singleton
 	 *
-	 * @return Friends_Template_Loader A class instance.
+	 * @return Template_Loader A class instance.
 	 */
 	public static function template_loader() {
 		static $template_loader;
 		if ( ! isset( $template_loader ) ) {
-			$template_loader = new Friends_Template_Loader();
+			$template_loader = new Template_Loader();
 		}
 		return $template_loader;
 	}
@@ -114,23 +116,24 @@ class Friends {
 	 * Constructor
 	 */
 	public function __construct() {
-		$this->access_control = new Friends_Access_Control( $this );
-		$this->admin          = new Friends_Admin( $this );
-		$this->feed           = new Friends_Feed( $this );
-		$this->messages       = new Friends_Messages( $this );
-		$this->notifications  = new Friends_Notifications( $this );
-		$this->frontend       = new Friends_Frontend( $this );
-		$this->reactions      = new Friends_Reactions( $this );
-		$this->rest           = new Friends_REST( $this );
+		$this->access_control = new Access_Control( $this );
+		$this->admin          = new Admin( $this );
+		$this->feed           = new Feed( $this );
+		$this->messages       = new Messages( $this );
+		$this->notifications  = new Notifications( $this );
+		$this->frontend       = new Frontend( $this );
+		$this->reactions      = new Reactions( $this );
+		$this->rest           = new REST( $this );
 
-		new Friends_3rd_Parties( $this );
-		new Friends_Blocks( $this );
-		new Friends_Logging( $this );
-		new Friends_Shortcodes( $this );
+		new Third_Parties( $this );
+		new Blocks( $this );
+		new Logging( $this );
+		new Shortcodes( $this );
+		new Automatic_Status( $this );
 		$this->register_hooks();
 		load_plugin_textdomain( 'friends', false, FRIENDS_PLUGIN_FILE . '/languages/' );
-		do_action( 'friends_init', $this );
-		do_action( 'friends_register_parser', $this->feed );
+		do_action( 'friends_loaded', $this );
+		do_action( 'friends_load_parsers', $this->feed );
 	}
 
 	/**
@@ -138,7 +141,7 @@ class Friends {
 	 */
 	private function register_hooks() {
 		add_action( 'init', array( $this, 'register_custom_post_type' ) );
-		add_action( 'init', array( Friend_User_Feed::class, 'register_taxonomy' ) );
+		add_action( 'init', array( User_Feed::class, 'register_taxonomy' ) );
 		add_filter( 'get_avatar_data', array( $this, 'get_avatar_data' ), 10, 2 );
 
 		add_action( 'template_redirect', array( $this, 'http_header' ), 5 );
@@ -191,6 +194,7 @@ class Friends {
 			'supports'            => array( 'title', 'editor', 'author', 'revisions', 'thumbnail', 'excerpt', 'comments', 'post-formats' ),
 			'taxonomies'          => array( 'post_tag', 'post_format', 'friend-reaction-' . get_current_user_id() ),
 			'has_archive'         => true,
+			'rewrite'             => false,
 		);
 
 		register_post_type( self::CPT, $args );
@@ -249,7 +253,7 @@ class Friends {
 	 * Creates a page /friends/ to enable customization via.
 	 */
 	public static function create_friends_page() {
-		$query = new WP_Query(
+		$query = new \WP_Query(
 			array(
 				'name'      => 'friends',
 				'post_type' => 'page',
@@ -330,7 +334,7 @@ class Friends {
 	 */
 	public static function upgrade_plugin( $previous_version ) {
 		if ( version_compare( $previous_version, '0.20.1', '<' ) ) {
-			$friends_subscriptions = Friend_User_Query::all_friends_subscriptions();
+			$friends_subscriptions = User_Query::all_friends_subscriptions();
 			foreach ( $friends_subscriptions->get_results() as $user ) {
 				$gravatar = get_user_option( 'friends_gravatar', $user->ID );
 				$user_icon_url = get_user_option( 'friends_user_icon_url', $user->ID );
@@ -348,8 +352,35 @@ class Friends {
 
 	/**
 	 * Actions to take upon plugin activation.
+	 *
+	 * @param      bool $network_wide  Whether the plugin has been activated network-wide.
 	 */
-	public static function activate_plugin() {
+	public static function activate_plugin( $network_wide = null ) {
+		if ( function_exists( 'is_multisite' ) && is_multisite() ) {
+			if ( $network_wide ) {
+				if ( ! is_super_admin() ) {
+					return;
+				}
+				foreach ( get_sites() as $blog ) {
+					switch_to_blog( $blog->blog_id );
+					self::activate_for_blog();
+					restore_current_blog();
+				}
+			} else {
+				if ( ! current_user_can( 'activate_plugins' ) ) {
+					return;
+				}
+				self::activate_for_blog();
+			}
+		} else {
+			self::activate_for_blog();
+		}
+	}
+
+	/**
+	 * Actions to take upon plugin activation.
+	 */
+	public static function activate_for_blog() {
 		self::setup_roles();
 		self::create_friends_page();
 
@@ -375,6 +406,7 @@ class Friends {
 		}
 
 		self::add_default_sidebars_widgets();
+		flush_rewrite_rules();
 	}
 
 	/**
@@ -436,7 +468,7 @@ class Friends {
 			if ( get_current_user_id() ) {
 				$main_user_id = get_current_user_id();
 			} else {
-				$users = Friend_User_Query::all_admin_users();
+				$users = User_Query::all_admin_users();
 				foreach ( $users->get_results() as $user ) {
 					$main_user_id = $user->ID;
 					break;
@@ -456,11 +488,11 @@ class Friends {
 	 */
 	public function get_avatar_data( $args, $id_or_email ) {
 		if ( is_object( $id_or_email ) ) {
-			if ( $id_or_email instanceof WP_User ) {
+			if ( $id_or_email instanceof \WP_User ) {
 				$id_or_email = $id_or_email->ID;
-			} elseif ( $id_or_email instanceof WP_Post ) {
+			} elseif ( $id_or_email instanceof \WP_Post ) {
 				$id_or_email = $id_or_email->post_author;
-			} elseif ( $id_or_email instanceof WP_Comment ) {
+			} elseif ( $id_or_email instanceof \WP_Comment ) {
 				$id_or_email = $id_or_email->user_id;
 			}
 		}
@@ -513,7 +545,7 @@ class Friends {
 	 * @return     bool  Whether the posts can be accessed.
 	 */
 	public static function authenticated_for_posts() {
-		return Friends_Access_Control::private_rss_is_authenticated() || ( is_admin() && current_user_can( Friends::REQUIRED_ROLE ) && apply_filters( 'friends_show_cached_posts', false ) );
+		return Access_Control::private_rss_is_authenticated() || ( is_admin() && current_user_can( Friends::REQUIRED_ROLE ) && apply_filters( 'friends_show_cached_posts', false ) );
 	}
 
 	/**
@@ -651,7 +683,7 @@ class Friends {
 
 		if ( is_author() && ! self::authenticated_for_posts() ) {
 			$author_obj = $wp_query->get_queried_object();
-			if ( $author_obj instanceof WP_User && Friend_User::is_friends_plugin_user( $author_obj ) && ! self::on_frontend() ) {
+			if ( $author_obj instanceof \WP_User && User::is_friends_plugin_user( $author_obj ) && ! self::on_frontend() ) {
 				$wp_query->set_404();
 				status_header( 404 );
 			}
@@ -661,7 +693,7 @@ class Friends {
 	/**
 	 * Modify the main query to allow limiting the post format on the homepage.
 	 *
-	 * @param      WP_Query $query  The query.
+	 * @param      \WP_Query $query  The query.
 	 */
 	public function pre_get_posts_filter_by_post_format( $query ) {
 		global $wp_query;
@@ -694,7 +726,7 @@ class Friends {
 		return $qvs;
 	}
 	/**
-	 * Add a post_format filter to a WP_Query.
+	 * Add a post_format filter to a \WP_Query.
 	 *
 	 * @param      array  $tax_query             The tax query.
 	 * @param      string $filter_by_post_format  The filter by post format.
@@ -802,7 +834,7 @@ class Friends {
 	 * Get all of the rel links for the HTML head.
 	 */
 	public static function get_link_rels() {
-		$rest_prefix = get_rest_url() . Friends_REST::PREFIX;
+		$rest_prefix = get_rest_url() . REST::PREFIX;
 		$links = array(
 			array(
 				'rel'  => 'friends-base-url',
@@ -885,7 +917,7 @@ class Friends {
 	 * Generate link tag(s) with the alternate post formats.
 	 */
 	public static function get_html_link_rel_alternate_post_formats() {
-		$separator = _x( '&raquo;', 'feed link' );
+		$separator = _x( '&raquo;', 'feed link' ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain
 		$blog_title = get_bloginfo( 'name' );
 
 		$links = array();
@@ -911,9 +943,10 @@ class Friends {
 	 */
 	public static function check_url( $url ) {
 		$host = parse_url( $url, PHP_URL_HOST );
-		if ( 'me.local' === $host || 'friend.local' === $host || 'example.org' === $host ) {
-			// Hosts used for test cases.
-			return $url;
+
+		$check_url = apply_filters( 'friends_host_is_valid', null, $host );
+		if ( ! is_null( $check_url ) ) {
+			return $check_url;
 		}
 
 		return wp_http_validate_url( $url );
@@ -923,7 +956,7 @@ class Friends {
 	 * Delete all the data the plugin has stored in WordPress
 	 */
 	public static function uninstall_plugin() {
-		$affected_users = new WP_User_Query( array( 'role__in' => array( 'friend', 'acquaintance', 'friend_request', 'pending_friend_request', 'subscription' ) ) );
+		$affected_users = new \WP_User_Query( array( 'role__in' => array( 'friend', 'acquaintance', 'friend_request', 'pending_friend_request', 'subscription' ) ) );
 		foreach ( $affected_users as $user ) {
 			$in_token = get_user_option( 'friends_in_token', $user->ID );
 			delete_option( 'friends_in_token_' . $in_token );
@@ -940,7 +973,7 @@ class Friends {
 		remove_role( 'subscription' );
 
 		$friends = Friends::get_instance();
-		$friend_posts = new WP_Query(
+		$friend_posts = new \WP_Query(
 			array(
 				'post_type'   => Friends::CPT,
 				'post_status' => array( 'publish', 'private', 'trash' ),

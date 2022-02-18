@@ -293,7 +293,7 @@ class Friends {
 			'post_name'    => 'friends',
 			'post_status'  => 'publish',
 		);
-		$post_id   = wp_insert_post( $post_data );
+		wp_insert_post( $post_data );
 	}
 
 	/**
@@ -415,6 +415,9 @@ class Friends {
 	public static function add_default_sidebars_widgets() {
 		$sidebars_widgets = get_option( 'sidebars_widgets' );
 
+		if ( ! is_array( $sidebars_widgets ) ) {
+			$sidebars_widgets = array();
+		}
 		$id = count( $sidebars_widgets );
 
 		foreach ( array(
@@ -972,7 +975,6 @@ class Friends {
 		remove_role( 'pending_friend_request' );
 		remove_role( 'subscription' );
 
-		$friends = Friends::get_instance();
 		$friend_posts = new \WP_Query(
 			array(
 				'post_type'   => Friends::CPT,

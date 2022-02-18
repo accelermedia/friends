@@ -11,12 +11,6 @@ namespace Friends;
  * Test the Notifications
  */
 class NotificationTest extends \WP_UnitTestCase {
-	/**
-	 * Current User ID
-	 *
-	 * @var int
-	 */
-	private $user_id;
 
 	/**
 	 * User ID of a friend at friend.local
@@ -65,7 +59,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		);
 		add_filter(
 			'friends_send_mail',
-			function( $do_send, $to, $subject, $message, $headers ) use ( $that ) {
+			function( $do_send, $to, $subject ) use ( $that ) {
 				// translators: %1$s is the site name, %2$s is the subject.
 				$that->assertEquals( $subject, sprintf( _x( '[%1$s] %2$s', 'email subject', 'friends' ), 'friend.local', 'First Friend Post' ) );
 				$that->assertEquals( $to, \WP_TESTS_EMAIL );
@@ -73,7 +67,7 @@ class NotificationTest extends \WP_UnitTestCase {
 				return false;
 			},
 			10,
-			5
+			3
 		);
 		$friends = Friends::get_instance();
 		fetch_feed( null ); // load SimplePie.
@@ -95,7 +89,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		$feed->init();
 
 		$friends   = Friends::get_instance();
-		$new_items = $friends->feed->process_incoming_feed_items( $parser->process_items( $feed->get_items(), $user_feed->get_url() ), $user_feed, Friends::CPT );
+		$new_items = $friends->feed->process_incoming_feed_items( $parser->process_items( $feed->get_items(), $user_feed->get_url() ), $user_feed );
 		$friends->feed->notify_about_new_posts( $user, $new_items );
 	}
 
@@ -130,6 +124,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		$user_feed = new User_Feed( $term, $user );
 
 		$test_user = get_user_by( 'email', \WP_TESTS_EMAIL );
+		$this->assertInstanceOf( 'WP_User', $test_user );
 		update_user_option( $test_user->ID, 'friends_no_new_post_notification_' . $this->friend_id, true );
 
 		$feed = new \SimplePie();
@@ -137,7 +132,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		$feed->init();
 
 		$friends   = Friends::get_instance();
-		$new_items = $friends->feed->process_incoming_feed_items( $parser->process_items( $feed->get_items(), $user_feed->get_url() ), $user_feed, Friends::CPT );
+		$new_items = $friends->feed->process_incoming_feed_items( $parser->process_items( $feed->get_items(), $user_feed->get_url() ), $user_feed );
 		$friends->feed->notify_about_new_posts( $user, $new_items );
 	}
 
@@ -158,9 +153,10 @@ class NotificationTest extends \WP_UnitTestCase {
 		update_option( 'home', 'http://me.local' );
 
 		$test_user = get_user_by( 'email', \WP_TESTS_EMAIL );
+		$this->assertInstanceOf( 'WP_User', $test_user );
 		update_user_option( $test_user->ID, 'friends_no_friend_request_notification', true );
 
-		$me_id = $this->factory->user->create(
+		$this->factory->user->create(
 			array(
 				'user_login' => 'me.local',
 				'user_email' => 'me@me.local',
@@ -184,7 +180,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		);
 		add_filter(
 			'friends_send_mail',
-			function( $do_send, $to, $subject, $message, $headers ) use ( $that ) {
+			function( $do_send, $to, $subject ) use ( $that ) {
 				// translators: %s is a user display name.
 				$partial_subject = sprintf( __( '%s sent a Friend Request', 'friends' ), 'me.local' );
 				// translators: %1$s is the site name, %2$s is the subject.
@@ -194,12 +190,12 @@ class NotificationTest extends \WP_UnitTestCase {
 				return false;
 			},
 			10,
-			5
+			3
 		);
 
 		update_option( 'home', 'http://me.local' );
 
-		$me_id = $this->factory->user->create(
+		$this->factory->user->create(
 			array(
 				'user_login' => 'me.local',
 				'user_email' => 'me@me.local',
@@ -215,7 +211,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		$that = $this;
 		add_filter(
 			'friends_send_mail',
-			function( $do_send, $to, $subject, $message, $headers ) use ( $that ) {
+			function( $do_send, $to, $subject ) use ( $that ) {
 				// translators: %s is a user display name.
 				$partial_subject = sprintf( __( '%s accepted your Friend Request', 'friends' ), 'me.local' );
 				// translators: %1$s is the site name, %2$s is the subject.
@@ -225,7 +221,7 @@ class NotificationTest extends \WP_UnitTestCase {
 				return false;
 			},
 			10,
-			5
+			3
 		);
 
 		update_option( 'home', 'http://me.local' );
@@ -271,7 +267,7 @@ class NotificationTest extends \WP_UnitTestCase {
 		$keyword = 'private';
 		add_filter(
 			'friends_send_mail',
-			function( $do_send, $to, $subject, $message, $headers ) use ( $that, $keyword ) {
+			function( $do_send, $to, $subject ) use ( $that, $keyword ) {
 				// translators: %s is a keyword string specified by the user.
 				$keyword_title = sprintf( __( 'Keyword matched: %s', 'friends' ), $keyword );
 				// translators: %1$s is the site name, %2$s is the subject.
@@ -281,7 +277,7 @@ class NotificationTest extends \WP_UnitTestCase {
 				return false;
 			},
 			10,
-			5
+			3
 		);
 		$friends = Friends::get_instance();
 		fetch_feed( null ); // load SimplePie.

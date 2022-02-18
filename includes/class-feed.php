@@ -39,7 +39,7 @@ class Feed {
 	 *
 	 * @var        array
 	 */
-	private $reservered_parser_slugs = array( 'friends', 'unsupported' );
+	private $reserved_parser_slugs = array( 'friends', 'unsupported' );
 
 	/**
 	 * Constructor
@@ -67,10 +67,10 @@ class Feed {
 		add_action( 'rss2_ns', array( $this, 'additional_feed_namespaces' ) );
 
 		add_action( 'cron_friends_refresh_feeds', array( $this, 'cron_friends_refresh_feeds' ) );
-		add_action( 'set_user_role', array( $this, 'retrieve_new_friends_posts' ), 999, 3 );
+		add_action( 'set_user_role', array( $this, 'retrieve_new_friends_posts' ), 999, 2 );
 
 		add_action( 'wp_loaded', array( $this, 'friends_add_friend_redirect' ), 100 );
-		add_action( 'wp_feed_options', array( $this, 'wp_feed_options' ), 90, 2 );
+		add_action( 'wp_feed_options', array( $this, 'wp_feed_options' ), 90 );
 
 		add_action( 'wp_insert_post', array( $this, 'invalidate_post_count_cache' ), 10, 2 );
 	}
@@ -82,7 +82,7 @@ class Feed {
 	 * @param      Feed_Parser $parser  The parser that extends the Feed_Parser class.
 	 */
 	public function register_parser( $slug, Feed_Parser $parser ) {
-		if ( in_array( $slug, $this->reservered_parser_slugs, true ) ) {
+		if ( in_array( $slug, $this->reserved_parser_slugs, true ) ) {
 			// translators: %s is the slug of a parser.
 			return new \WP_Error( 'resevered-slug', sprintf( __( 'The slug "%s" cannot be used.', 'friends' ), $slug ) );
 		}
@@ -101,7 +101,7 @@ class Feed {
 	 * @param      string $slug    The slug.
 	 */
 	public function unregister_parser( $slug ) {
-		if ( ! in_array( $slug, $this->reservered_parser_slugs, true ) ) {
+		if ( ! in_array( $slug, $this->reserved_parser_slugs, true ) ) {
 			unset( $this->parsers[ $slug ] );
 		}
 	}
@@ -387,7 +387,7 @@ class Feed {
 		if ( isset( $rules['field'] ) && is_array( $rules['field'] ) ) {
 			// Transform POST values.
 			$transformed_rules = array();
-			foreach ( $rules['field'] as $key => $field ) {
+			foreach ( array_keys( $rules['field'] ) as $key ) {
 				$rule = array();
 				foreach ( $rules as $part => $keys ) {
 					if ( isset( $keys[ $key ] ) ) {
@@ -493,6 +493,15 @@ class Feed {
 	}
 
 	/**
+	 * Return the number of revisions to keep.
+	 *
+	 * @return     int   The number of revisions to keep.
+	 */
+	public function revisions_to_keep() {
+		return 10;
+	}
+
+	/**
 	 * Process incoming feed items
 	 *
 	 * @param  array     $items           The incoming items.
@@ -502,10 +511,15 @@ class Feed {
 	public function process_incoming_feed_items( array $items, User_Feed $user_feed ) {
 		$friend_user     = $user_feed->get_friend_user();
 		$remote_post_ids = $friend_user->get_remote_post_ids();
-		$rules           = $friend_user->get_feed_rules();
 		$post_formats    = get_post_format_strings();
 		$feed_post_format = $user_feed->get_post_format();
 
+		$current_user = wp_get_current_user();
+		// Posts and revisions should be associated with this user.
+		wp_set_current_user( $friend_user->ID );
+
+		// Limit this as a safety measure.
+		add_filter( 'wp_revisions_to_keep', array( $this, 'revisions_to_keep' ) );
 		$new_posts = array();
 		foreach ( $items as $item ) {
 			if ( ! $item->permalink ) {
@@ -552,7 +566,7 @@ class Feed {
 
 			$post_data = array(
 				'post_title'        => $title,
-				'post_content'      => $content,
+				'post_content'      => force_balance_tags( $content ),
 				'post_modified_gmt' => $updated_date,
 				'post_status'       => $item->post_status,
 				'guid'              => $permalink,
@@ -564,22 +578,34 @@ class Feed {
 			}
 
 			if ( ! is_null( $post_id ) ) {
-				$post_data['ID'] = $post_id;
-				$was_modified_by_user = false;
-				foreach ( wp_get_post_revisions( $post_id ) as $revision ) {
-					if ( intval( $revision->post_author ) ) {
-						$was_modified_by_user = true;
+				$old_post = get_post( $post_id );
+				$was_modified = false;
+				foreach ( array( 'post_title', 'post_content', 'post_status' ) as $field ) {
+					if ( strip_tags( $old_post->$field ) !== strip_tags( $post_data[ $field ] ) ) {
+						$was_modified = true;
 						break;
 					}
 				}
-				if ( ! $was_modified_by_user ) {
-					wp_update_post( $post_data );
+
+				if ( $was_modified ) {
+					$post_data['ID'] = $post_id;
+					$was_modified_by_user = false;
+					foreach ( wp_get_post_revisions( $post_id ) as $revision ) {
+						if ( intval( $revision->post_author ) !== $friend_user->ID ) {
+							$was_modified_by_user = true;
+							break;
+						}
+					}
+					if ( ! $was_modified_by_user ) {
+						$post_data['post_content'] = str_replace( '\\', '\\\\', $post_data['post_content'] );
+						wp_update_post( $post_data );
+					}
 				}
 			} else {
-				$post_data['post_author']   = $friend_user->ID;
 				$post_data['post_type']     = Friends::CPT;
 				$post_data['post_date_gmt'] = $item->date;
 				$post_data['comment_count'] = $item->comment_count;
+				$post_data['post_content'] = str_replace( '\\', '\\\\', $post_data['post_content'] );
 
 				$post_id = wp_insert_post( $post_data, true );
 				if ( is_wp_error( $post_id ) ) {
@@ -613,6 +639,11 @@ class Feed {
 
 			global $wpdb;
 			$wpdb->update( $wpdb->posts, array( 'comment_count' => $item->comment_count ), array( 'ID' => $post_id ) );
+		}
+		remove_filter( 'wp_revisions_to_keep', array( $this, 'revisions_to_keep' ) );
+
+		if ( $current_user ) {
+			wp_set_current_user( $current_user->ID );
 		}
 
 		return $new_posts;
@@ -689,9 +720,8 @@ class Feed {
 	 * Configure feed downloading options
 	 *
 	 * @param  SimplePie $feed The SimplePie object.
-	 * @param  string    $url  The URL to fetch.
 	 */
-	public function wp_feed_options( $feed, $url ) {
+	public function wp_feed_options( $feed ) {
 		$feed->useragent .= ' Friends/' . Friends::VERSION;
 		if ( isset( $_GET['page'] ) && 'page=friends-refresh' === $_GET['page'] ) {
 			$feed->enable_cache( false );
@@ -995,9 +1025,8 @@ class Feed {
 	 *
 	 * @param  int    $user_id   The user id.
 	 * @param  string $new_role  The new role.
-	 * @param  string $old_roles The old roles.
 	 */
-	public function retrieve_new_friends_posts( $user_id, $new_role, $old_roles ) {
+	public function retrieve_new_friends_posts( $user_id, $new_role ) {
 		if ( ( 'friend' === $new_role || 'acquaintance' === $new_role ) && apply_filters( 'friends_immediately_fetch_feed', true ) ) {
 			update_user_option( $user_id, 'friends_new_friend', true );
 			$friend = new User( $user_id );
